@@ -56,11 +56,19 @@ func TestServer_CursorSmokeListsToolsAndSearchOK(t *testing.T) {
 	reg := tools.NewRegistry(fakeClient{}, tools.Defaults{UserID: "u", AppID: "a"})
 	srv := New(reg, nil, "test")
 
+	client := startCursorSmokeClient(t, srv)
+	defer client.Close()
+
+	assertCursorToolsListed(t, client)
+	assertMemorySearchCallOK(t, client)
+}
+
+func startCursorSmokeClient(t *testing.T, srv *Server) *mcpclient.Client {
+	t.Helper()
 	client, err := mcpclient.NewInProcessClient(srv.MCPServer())
 	if err != nil {
 		t.Fatalf("NewInProcessClient: %v", err)
 	}
-	defer client.Close()
 
 	ctx := context.Background()
 	if err := client.Start(ctx); err != nil {
@@ -72,34 +80,49 @@ func TestServer_CursorSmokeListsToolsAndSearchOK(t *testing.T) {
 	if _, err := client.Initialize(ctx, initReq); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
+	return client
+}
 
-	// tools/list round-trip
+func assertCursorToolsListed(t *testing.T, client *mcpclient.Client) {
+	t.Helper()
 	listReq := mcp.ListToolsRequest{}
-	listResult, err := client.ListTools(ctx, listReq)
+	listResult, err := client.ListTools(context.Background(), listReq)
 	if err != nil {
 		t.Fatalf("ListTools: %v", err)
 	}
-	cursorTools := map[string]bool{
+	found := toolNameSet(listResult.Tools)
+	required := []string{
+		"memory_search",
+		"memory_write",
+		"memory_read",
+	}
+	for _, name := range required {
+		if !found[name] {
+			t.Errorf("tools/list missing Cursor tool %q", name)
+		}
+	}
+}
+
+func toolNameSet(listed []mcp.Tool) map[string]bool {
+	found := map[string]bool{
 		"memory_search": false,
 		"memory_write":  false,
 		"memory_read":   false,
 	}
-	for _, tool := range listResult.Tools {
-		if _, ok := cursorTools[tool.Name]; ok {
-			cursorTools[tool.Name] = true
+	for _, tool := range listed {
+		if _, ok := found[tool.Name]; ok {
+			found[tool.Name] = true
 		}
 	}
-	for name, found := range cursorTools {
-		if !found {
-			t.Errorf("tools/list missing Cursor tool %q", name)
-		}
-	}
+	return found
+}
 
-	// tools/call round-trip: memory_search
+func assertMemorySearchCallOK(t *testing.T, client *mcpclient.Client) {
+	t.Helper()
 	callReq := mcp.CallToolRequest{}
 	callReq.Params.Name = "memory_search"
 	callReq.Params.Arguments = map[string]any{"query": "test query"}
-	callResult, err := client.CallTool(ctx, callReq)
+	callResult, err := client.CallTool(context.Background(), callReq)
 	if err != nil {
 		t.Fatalf("CallTool(memory_search): %v", err)
 	}
@@ -109,6 +132,12 @@ func TestServer_CursorSmokeListsToolsAndSearchOK(t *testing.T) {
 	if len(callResult.Content) == 0 {
 		t.Fatal("memory_search returned empty content")
 	}
+	searchOut := decodeFirstTextContent(t, callResult)
+	assertNonEmptyResults(t, searchOut)
+}
+
+func decodeFirstTextContent(t *testing.T, callResult *mcp.CallToolResult) map[string]any {
+	t.Helper()
 	text, ok := callResult.Content[0].(mcp.TextContent)
 	if !ok {
 		t.Fatalf("content[0] type = %T, want mcp.TextContent", callResult.Content[0])
@@ -117,6 +146,11 @@ func TestServer_CursorSmokeListsToolsAndSearchOK(t *testing.T) {
 	if err := json.Unmarshal([]byte(text.Text), &searchOut); err != nil {
 		t.Fatalf("unmarshal search output: %v", err)
 	}
+	return searchOut
+}
+
+func assertNonEmptyResults(t *testing.T, searchOut map[string]any) {
+	t.Helper()
 	results, ok := searchOut["results"]
 	if !ok {
 		t.Fatal("search output missing 'results' key")

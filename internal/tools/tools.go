@@ -35,6 +35,13 @@ func NewRegistry(client Mem0Client, defaults Defaults) *Registry {
 }
 
 func (r *Registry) Tools() []RegisteredTool {
+	registered := make([]RegisteredTool, 0, 10)
+	registered = append(registered, r.mem0Tools()...)
+	registered = append(registered, r.cursorAliasTools()...)
+	return registered
+}
+
+func (r *Registry) mem0Tools() []RegisteredTool {
 	return []RegisteredTool{
 		{Tool: r.addTool(), Handler: r.handleAdd},
 		{Tool: r.searchTool(), Handler: r.handleSearch},
@@ -43,6 +50,11 @@ func (r *Registry) Tools() []RegisteredTool {
 		{Tool: r.deleteTool(), Handler: r.handleDelete},
 		{Tool: r.historyTool(), Handler: r.handleHistory},
 		{Tool: r.doctorTool(), Handler: r.handleDoctor},
+	}
+}
+
+func (r *Registry) cursorAliasTools() []RegisteredTool {
+	return []RegisteredTool{
 		{Tool: r.memorySearchTool(), Handler: r.handleSearch},
 		{Tool: r.memoryWriteTool(), Handler: r.handleAdd},
 		{Tool: r.memoryReadTool(), Handler: r.handleMemoryRead},
