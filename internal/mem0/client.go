@@ -66,6 +66,10 @@ func (c *Client) Search(ctx context.Context, req SearchRequest) (map[string]any,
 	return c.doJSON(ctx, http.MethodPost, "/search", nil, req)
 }
 
+func (c *Client) Get(ctx context.Context, id string) (map[string]any, error) {
+	return c.doJSON(ctx, http.MethodGet, "/memories/"+url.PathEscape(id), nil, nil)
+}
+
 func (c *Client) GetAll(ctx context.Context, userID, appID string, limit int) (map[string]any, error) {
 	q := url.Values{}
 	if userID != "" {
