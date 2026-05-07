@@ -12,6 +12,7 @@ import (
 type Mem0Client interface {
 	Add(ctx context.Context, req mem0.MemoryRequest) (map[string]any, error)
 	Search(ctx context.Context, req mem0.SearchRequest) (map[string]any, error)
+	Get(ctx context.Context, id string) (map[string]any, error)
 	GetAll(ctx context.Context, userID, appID string, limit int) (map[string]any, error)
 	Update(ctx context.Context, id, memory string, metadata map[string]any) (map[string]any, error)
 	Delete(ctx context.Context, id string) (map[string]any, error)
@@ -42,6 +43,9 @@ func (r *Registry) Tools() []RegisteredTool {
 		{Tool: r.deleteTool(), Handler: r.handleDelete},
 		{Tool: r.historyTool(), Handler: r.handleHistory},
 		{Tool: r.doctorTool(), Handler: r.handleDoctor},
+		{Tool: r.memorySearchTool(), Handler: r.handleSearch},
+		{Tool: r.memoryWriteTool(), Handler: r.handleAdd},
+		{Tool: r.memoryReadTool(), Handler: r.handleMemoryRead},
 	}
 }
 
@@ -191,6 +195,48 @@ func (r *Registry) handleDoctor(ctx context.Context, _ mcp.CallToolRequest) (*mc
 		return errResult(err), nil
 	}
 	return jsonResult(map[string]any{"status": "ok"})
+}
+
+func (r *Registry) handleMemoryRead(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args := req.GetArguments()
+	id := stringArg(args, "id")
+	if id == "" {
+		return errResult(errors.New("id is required")), nil
+	}
+	out, err := r.client.Get(ctx, id)
+	if err != nil {
+		return errResult(err), nil
+	}
+	return jsonResult(out)
+}
+
+func (r *Registry) memorySearchTool() mcp.Tool {
+	return mcp.NewTool("memory_search",
+		mcp.WithDescription("Search memories. Cursor-compatible alias for mem0_search."),
+		mcp.WithString("query", mcp.Required(), mcp.Description("Search query.")),
+		mcp.WithString("user_id", mcp.Description("Mem0 user id; defaults to MEM0_USER_ID.")),
+		mcp.WithString("app_id", mcp.Description("Mem0 app id; defaults to MEM0_APP_ID.")),
+		mcp.WithNumber("limit", mcp.Description("Maximum results.")),
+		mcp.WithObject("filters", mcp.Description("Optional Mem0 filter object.")),
+	)
+}
+
+func (r *Registry) memoryWriteTool() mcp.Tool {
+	return mcp.NewTool("memory_write",
+		mcp.WithDescription("Write a new memory. Cursor-compatible alias for mem0_add."),
+		mcp.WithString("text", mcp.Required(), mcp.Description("Memory text to store.")),
+		mcp.WithString("user_id", mcp.Description("Mem0 user id; defaults to MEM0_USER_ID.")),
+		mcp.WithString("app_id", mcp.Description("Mem0 app id; defaults to MEM0_APP_ID.")),
+		mcp.WithObject("metadata", mcp.Description("Optional metadata object.")),
+		mcp.WithBoolean("infer", mcp.Description("Whether Mem0 should infer structured memories. Defaults to true.")),
+	)
+}
+
+func (r *Registry) memoryReadTool() mcp.Tool {
+	return mcp.NewTool("memory_read",
+		mcp.WithDescription("Read a specific memory by ID."),
+		mcp.WithString("id", mcp.Required(), mcp.Description("Memory id to retrieve.")),
+	)
 }
 
 func (r *Registry) userID(args map[string]any) string {
