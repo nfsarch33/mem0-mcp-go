@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -15,6 +16,13 @@ type Config struct {
 	SSEAddr   string
 	Timeout   time.Duration
 	LogLevel  string
+
+	DualWrite    bool
+	CloudURL     string
+	CloudAPIKey  string
+	ReadSource   string
+	BackupURL    string
+	BackupAPIKey string
 }
 
 func Load() Config {
@@ -27,7 +35,25 @@ func Load() Config {
 		SSEAddr:   getenv("MCP_SSE_ADDR", ":9092"),
 		Timeout:   getenvDuration("MEM0_TIMEOUT", 30*time.Second),
 		LogLevel:  getenv("LOG_LEVEL", "info"),
+
+		DualWrite:    getenvBool("MEM0_DUAL_WRITE", false),
+		CloudURL:     getenv("MEM0_CLOUD_URL", "https://api.mem0.ai"),
+		CloudAPIKey:  os.Getenv("MEM0_CLOUD_API_KEY"),
+		ReadSource:   getenv("MEM0_READ_SOURCE", "oss"),
+		BackupURL:    os.Getenv("MEM0_BACKUP_URL"),
+		BackupAPIKey: os.Getenv("MEM0_BACKUP_API_KEY"),
 	}
+}
+
+// DualWriteEnabled returns true when dual-write is on and at least the
+// cloud target has a URL and key configured.
+func (c Config) DualWriteEnabled() bool {
+	return c.DualWrite && c.CloudURL != "" && c.CloudAPIKey != ""
+}
+
+// BackupEnabled returns true when a backup target is fully configured.
+func (c Config) BackupEnabled() bool {
+	return c.BackupURL != "" && c.BackupAPIKey != ""
 }
 
 func getenv(key, fallback string) string {
@@ -35,6 +61,19 @@ func getenv(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func getenvBool(key string, fallback bool) bool {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+	switch strings.ToLower(value) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func getenvDuration(key string, fallback time.Duration) time.Duration {

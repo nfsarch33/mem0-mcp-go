@@ -33,6 +33,29 @@ Cursor MCP templates.
 Do not pass secrets on argv. Keep `MEM0_API_KEY` in 1Password or the target host
 environment.
 
+### Dual-Write
+
+Fan out writes to a managed cloud API and/or a backup target while keeping
+the self-hosted OSS instance as the primary. Reads are always served by one
+backend (configurable).
+
+| Env var | Default | Purpose |
+| --- | --- | --- |
+| `MEM0_DUAL_WRITE` | `false` | Enable write fan-out. |
+| `MEM0_CLOUD_URL` | `https://api.mem0.ai` | Cloud API base URL. |
+| `MEM0_CLOUD_API_KEY` | empty | Cloud API key. Required when dual-write is on. |
+| `MEM0_READ_SOURCE` | `oss` | Read from `oss` (primary) or `cloud` (shadow). |
+| `MEM0_BACKUP_URL` | empty | Optional third write target. |
+| `MEM0_BACKUP_API_KEY` | empty | API key for the backup target. |
+
+When dual-write is enabled:
+
+- **Primary** (OSS) writes are synchronous — the MCP tool blocks until done.
+- **Shadow** (cloud) writes fire in a background goroutine and never block.
+- **Backup** writes (if configured) also fire async.
+- Shadow/backup errors are logged via slog but never fail the MCP response.
+- The `/health` and `/healthz` endpoints report dual-write status.
+
 ## Development
 
 ```bash
