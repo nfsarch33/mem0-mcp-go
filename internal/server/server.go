@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -13,11 +14,20 @@ import (
 	"github.com/nfsarch33/mem0-mcp-go/internal/tools"
 )
 
+// DualWriteStatus is reported on the health endpoint when dual-write is active.
+type DualWriteStatus struct {
+	Enabled    bool   `json:"enabled"`
+	ReadSource string `json:"read_source,omitempty"`
+	HasCloud   bool   `json:"has_cloud"`
+	HasBackup  bool   `json:"has_backup"`
+}
+
 type Server struct {
-	logger    *slog.Logger
-	version   string
-	mcp       *mcpserver.MCPServer
-	toolCount int
+	logger          *slog.Logger
+	version         string
+	mcp             *mcpserver.MCPServer
+	toolCount       int
+	dualWriteStatus DualWriteStatus
 }
 
 func New(registry *tools.Registry, logger *slog.Logger, version string) *Server {
@@ -27,6 +37,11 @@ func New(registry *tools.Registry, logger *slog.Logger, version string) *Server 
 	s := &Server{logger: logger, version: version}
 	s.mcp = s.buildMCPServer(registry)
 	return s
+}
+
+// SetDualWriteStatus records dual-write config so the health endpoint can report it.
+func (s *Server) SetDualWriteStatus(status DualWriteStatus) {
+	s.dualWriteStatus = status
 }
 
 func (s *Server) buildMCPServer(registry *tools.Registry) *mcpserver.MCPServer {
@@ -65,10 +80,8 @@ func (s *Server) runSSE(ctx context.Context, addr string) error {
 	)
 	mux := http.NewServeMux()
 	mux.Handle("/", sse)
-	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"status":"ok","transport":"sse","tools":%d}`, s.toolCount)
-	})
+	mux.HandleFunc("/health", s.handleHealth)
+	mux.HandleFunc("/healthz", s.handleHealth)
 	srv := &http.Server{Addr: addr, Handler: mux}
 	go func() {
 		<-ctx.Done()
@@ -79,4 +92,15 @@ func (s *Server) runSSE(ctx context.Context, addr string) error {
 		return fmt.Errorf("sse server: %w", err)
 	}
 	return nil
+}
+
+func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	payload := map[string]any{
+		"status":     "ok",
+		"transport":  "sse",
+		"tools":      s.toolCount,
+		"dual_write": s.dualWriteStatus,
+	}
+	_ = json.NewEncoder(w).Encode(payload)
 }

@@ -42,9 +42,48 @@ func run(args []string) error {
 	}
 	cfg := config.Load()
 	logger := buildLogger(cfg.LogLevel)
-	client := mem0.NewClient(mem0.Options{BaseURL: cfg.BaseURL, APIKey: cfg.APIKey, Timeout: cfg.Timeout})
+
+	primary := mem0.NewClient(mem0.Options{BaseURL: cfg.BaseURL, APIKey: cfg.APIKey, Timeout: cfg.Timeout})
+
+	var client tools.Mem0Client = primary
+	dwStatus := server.DualWriteStatus{}
+
+	if cfg.DualWriteEnabled() {
+		shadow := mem0.NewClient(mem0.Options{
+			BaseURL: cfg.CloudURL,
+			APIKey:  cfg.CloudAPIKey,
+			Timeout: cfg.Timeout,
+		})
+		var backup *mem0.Client
+		if cfg.BackupEnabled() {
+			backup = mem0.NewClient(mem0.Options{
+				BaseURL: cfg.BackupURL,
+				APIKey:  cfg.BackupAPIKey,
+				Timeout: cfg.Timeout,
+			})
+		}
+		dw := mem0.NewDualWriter(primary, shadow, backup, mem0.DualWriterConfig{
+			ReadSource:    cfg.ReadSource,
+			ShadowTimeout: cfg.Timeout,
+		}, logger)
+		client = dw
+		dwStatus = server.DualWriteStatus{
+			Enabled:    true,
+			ReadSource: cfg.ReadSource,
+			HasCloud:   true,
+			HasBackup:  cfg.BackupEnabled(),
+		}
+		logger.Info("dual-write enabled",
+			"read_source", cfg.ReadSource,
+			"cloud_url", cfg.CloudURL,
+			"has_backup", cfg.BackupEnabled(),
+		)
+	}
+
 	registry := tools.NewRegistry(client, tools.Defaults{UserID: cfg.UserID, AppID: cfg.AppID})
 	srv := server.New(registry, logger, version)
+	srv.SetDualWriteStatus(dwStatus)
+
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	return srv.Run(ctx, cfg.Transport, cfg.SSEAddr)
@@ -82,6 +121,14 @@ Env:
   MCP_TRANSPORT          stdio | sse (default stdio)
   MCP_SSE_ADDR           Bind addr for sse (default :9092)
   LOG_LEVEL              debug | info | warn | error
+
+Dual-Write:
+  MEM0_DUAL_WRITE        Enable fan-out to cloud+backup (default false)
+  MEM0_CLOUD_URL         Cloud API base URL (default https://api.mem0.ai)
+  MEM0_CLOUD_API_KEY     Cloud API key
+  MEM0_READ_SOURCE       Read from oss or cloud (default oss)
+  MEM0_BACKUP_URL        Optional backup target URL
+  MEM0_BACKUP_API_KEY    Optional backup target API key
 
 No credentials may appear on argv.
 `, version)
