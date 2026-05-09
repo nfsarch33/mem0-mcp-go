@@ -19,16 +19,32 @@ flips reads from managed Mem0 to the Oracle-hosted OSS deployment.
 
 | Env var | Default | Purpose |
 | --- | --- | --- |
-| `MEM0_BASE_URL` | `http://127.0.0.1:18888` | Self-hosted Mem0 base URL. |
+| `MEM0_BASE_URL` | empty (required) | Self-hosted Mem0 base URL. |
 | `MEM0_API_KEY` | empty | Mem0 OSS API key, sent as `X-API-Key`. |
-| `MEM0_USER_ID` | `nfsarch33` | Default user namespace. |
-| `MEM0_APP_ID` | `cursor-global-kb` | Default app namespace. |
+| `MEM0_USER_ID` | `default-user` | Default user namespace. |
+| `MEM0_APP_ID` | `default-app` | Default app namespace. |
 | `MCP_TRANSPORT` | `stdio` | `stdio` or `sse`. |
 | `MCP_SSE_ADDR` | `:9092` | SSE bind address. |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, or `error`. |
 
 `MEM0_DEFAULT_USER_ID` is accepted as a compatibility fallback for existing
 Cursor MCP templates.
+
+### Operator deploy step
+
+`MEM0_BASE_URL` is intentionally empty by default; the binary will not work
+until you set it. Wire it in your private deploy environment, for example:
+
+```bash
+export MEM0_BASE_URL="http://<your-mem0-host>:<port>"
+export MEM0_API_KEY="$(op read 'op://<vault-name>/<item-name>/api_key')"
+export MEM0_USER_ID="<your-account>"
+export MEM0_APP_ID="<your-app>"
+```
+
+The Mem0 host can be a tunnel endpoint, a private LAN address, or any URL
+your network reaches. Keep that value out of public repositories — the
+defaults shipped here intentionally encode no operator topology.
 
 Do not pass secrets on argv. Keep `MEM0_API_KEY` in 1Password or the target host
 environment.
