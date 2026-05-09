@@ -113,11 +113,11 @@ Usage:
   mem0-mcp-go [--version|--help]
 
 Env:
-  MEM0_BASE_URL          Self-hosted Mem0 base URL (default http://127.0.0.1:18888)
+  MEM0_BASE_URL          Self-hosted Mem0 base URL (REQUIRED; no default)
   MEM0_API_KEY           Mem0 OSS API key (X-API-Key)
-  MEM0_USER_ID           Default Mem0 user id (default nfsarch33)
+  MEM0_USER_ID           Default Mem0 user id (default default-user)
   MEM0_DEFAULT_USER_ID   Compatibility fallback for old MCP configs
-  MEM0_APP_ID            Default app id (default cursor-global-kb)
+  MEM0_APP_ID            Default app id (default default-app)
   MCP_TRANSPORT          stdio | sse (default stdio)
   MCP_SSE_ADDR           Bind addr for sse (default :9092)
   LOG_LEVEL              debug | info | warn | error

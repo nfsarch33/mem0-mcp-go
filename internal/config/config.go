@@ -25,12 +25,17 @@ type Config struct {
 	BackupAPIKey string
 }
 
+// Load reads MEM0_* environment variables and returns a Config with
+// generic defaults. Operators MUST set MEM0_BASE_URL in their deploy
+// environment; the package no longer pre-wires loopback or personal
+// tunnel topology. UserID and AppID default to neutral placeholders so
+// the package is publishable as a true OSS Mem0 MCP server.
 func Load() Config {
 	return Config{
-		BaseURL:   getenv("MEM0_BASE_URL", "http://127.0.0.1:18888"),
+		BaseURL:   getenv("MEM0_BASE_URL", ""),
 		APIKey:    os.Getenv("MEM0_API_KEY"),
-		UserID:    getenv("MEM0_USER_ID", getenv("MEM0_DEFAULT_USER_ID", "nfsarch33")),
-		AppID:     getenv("MEM0_APP_ID", "cursor-global-kb"),
+		UserID:    getenv("MEM0_USER_ID", getenv("MEM0_DEFAULT_USER_ID", "default-user")),
+		AppID:     getenv("MEM0_APP_ID", "default-app"),
 		Transport: getenv("MCP_TRANSPORT", "stdio"),
 		SSEAddr:   getenv("MCP_SSE_ADDR", ":9092"),
 		Timeout:   getenvDuration("MEM0_TIMEOUT", 30*time.Second),
