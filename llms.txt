@@ -1,0 +1,60 @@
+# mem0-mcp-go
+
+> Go-native MCP server for self-hosted Mem0 OSS. Provides memory add,
+> search, get, update, delete, history, and doctor tools over stdio or
+> SSE transport.
+
+## Overview
+
+- Name: mem0-mcp-go
+- Purpose: Go-native MCP server bridging self-hosted Mem0 OSS to MCP clients (Cursor, Claude Code); provides 7 memory management tools with optional dual-write fan-out to cloud and backup targets.
+- Language(s): Go
+- License: MIT
+- Authoritative README: <https://github.com/nfsarch33/mem0-mcp-go#readme>
+- Source of truth branch: `main`
+
+## Quick Start
+
+- Build and run:
+  ```
+  go run ./cmd/mem0-mcp-go --version
+  export MEM0_BASE_URL="http://<your-mem0-host>:<port>"
+  ```
+- MCP client config:
+  ```json
+  {
+    "mcpServers": {
+      "mem0": {
+        "command": "mem0-mcp-go",
+        "env": {
+          "MEM0_BASE_URL": "http://<your-mem0-host>:<port>"
+        }
+      }
+    }
+  }
+  ```
+- Run tests: `go test ./...`
+- Minimum runtime prerequisites: Go 1.22+, self-hosted Mem0 instance
+
+## Key Concepts
+
+- Tools: `mem0_add`, `mem0_search`, `mem0_get_all`, `mem0_update`, `mem0_delete`, `mem0_history`, `mem0_doctor`
+- Configuration via environment variables: `MEM0_BASE_URL` (required), `MEM0_API_KEY`, `MEM0_USER_ID`, `MEM0_APP_ID`, `MCP_TRANSPORT`, `LOG_LEVEL`
+- Dual-write support: fan out writes to cloud (`MEM0_CLOUD_URL`) and backup (`MEM0_BACKUP_URL`) while keeping OSS as primary
+- Read source configurable: `MEM0_READ_SOURCE` (`oss` or `cloud`)
+- Transport: `stdio` (default) or `sse` (`:9092`)
+- Do not pass secrets on argv; use environment variables or 1Password
+
+## Runnable Examples
+
+- Build: `go build ./cmd/mem0-mcp-go`
+- Run tests: `go test ./...`
+
+## Operational Notes
+
+- Issue tracker: <https://github.com/nfsarch33/mem0-mcp-go/issues>
+
+---
+
+*This file follows the emerging `llms.txt` convention adopted by cloudwego/eino,
+Anthropic tooling, and others.*
