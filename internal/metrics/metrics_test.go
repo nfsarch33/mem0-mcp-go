@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math"
 	"sync"
 	"testing"
 	"time"
@@ -128,5 +129,176 @@ func TestRecord_ConcurrentSafe(t *testing.T) {
 	want := int64(goroutines * opsPerGoroutine)
 	if snap.Ops["add"].Count != want {
 		t.Fatalf("count = %d, want %d", snap.Ops["add"].Count, want)
+	}
+}
+
+func TestCollector_100Ops_CountAccuracy(t *testing.T) {
+	t.Parallel()
+	c := NewCollector()
+
+	wantCounts := map[string]int64{"add": 30, "search": 25, "update": 25, "delete": 20}
+	wantErrors := map[string]int64{"add": 0, "search": 0, "update": 0, "delete": 5}
+
+	for i := int64(0); i < wantCounts["add"]; i++ {
+		c.Record("add", time.Duration(i+1)*time.Millisecond, nil)
+	}
+	for i := int64(0); i < wantCounts["search"]; i++ {
+		c.Record("search", time.Duration(i+1)*time.Millisecond, nil)
+	}
+	for i := int64(0); i < wantCounts["update"]; i++ {
+		c.Record("update", time.Duration(i+1)*time.Millisecond, nil)
+	}
+	for i := int64(0); i < wantCounts["delete"]; i++ {
+		var err error
+		if i < wantErrors["delete"] {
+			err = fmt.Errorf("delete failed")
+		}
+		c.Record("delete", time.Duration(i+1)*time.Millisecond, err)
+	}
+
+	snap := c.Snapshot()
+
+	totalRecorded := int64(0)
+	for op, want := range wantCounts {
+		got := snap.Ops[op].Count
+		if got != want {
+			t.Fatalf("%s count = %d, want %d", op, got, want)
+		}
+		totalRecorded += got
+	}
+	if totalRecorded != 100 {
+		t.Fatalf("total ops = %d, want 100", totalRecorded)
+	}
+
+	for op, want := range wantErrors {
+		got := snap.Ops[op].Errors
+		if got != want {
+			t.Fatalf("%s errors = %d, want %d", op, got, want)
+		}
+	}
+}
+
+func TestCollector_LatencyPercentiles_KnownDistribution(t *testing.T) {
+	t.Parallel()
+	c := NewCollector()
+
+	for i := 1; i <= 100; i++ {
+		c.Record("op", time.Duration(i)*time.Millisecond, nil)
+	}
+
+	snap := c.Snapshot()
+	s := snap.Ops["op"]
+
+	const tolerancePct = 0.05
+	checks := []struct {
+		name   string
+		got    time.Duration
+		target float64
+	}{
+		{"p50", s.P50, 50},
+		{"p95", s.P95, 95},
+		{"p99", s.P99, 99},
+	}
+	for _, c := range checks {
+		gotMs := float64(c.got) / float64(time.Millisecond)
+		lo := c.target * (1 - tolerancePct)
+		hi := c.target * (1 + tolerancePct)
+		if gotMs < lo || gotMs > hi {
+			t.Fatalf("%s = %.2fms, want %.2f–%.2fms (target %.0fms ±5%%)",
+				c.name, gotMs, lo, hi, c.target)
+		}
+	}
+}
+
+func TestCollector_WriteTo_ValidNDJSON(t *testing.T) {
+	t.Parallel()
+	c := NewCollector()
+
+	ops := []string{"add", "delete", "search", "update"}
+	for _, op := range ops {
+		c.Record(op, 10*time.Millisecond, nil)
+		c.Record(op, 20*time.Millisecond, fmt.Errorf("err"))
+	}
+
+	var buf bytes.Buffer
+	n, err := c.WriteTo(&buf)
+	if err != nil {
+		t.Fatalf("WriteTo: %v", err)
+	}
+	if n == 0 {
+		t.Fatal("WriteTo wrote 0 bytes")
+	}
+
+	lines := bytes.Split(bytes.TrimSpace(buf.Bytes()), []byte("\n"))
+	if len(lines) != len(ops) {
+		t.Fatalf("got %d lines, want %d", len(lines), len(ops))
+	}
+
+	requiredFields := []string{"op", "count", "errors", "p50_ms", "p95_ms", "p99_ms", "timestamp"}
+	for i, line := range lines {
+		var obj map[string]any
+		if err := json.Unmarshal(line, &obj); err != nil {
+			t.Fatalf("line %d not valid JSON: %v", i, err)
+		}
+		for _, field := range requiredFields {
+			v, ok := obj[field]
+			if !ok {
+				t.Fatalf("line %d missing field %q", i, field)
+			}
+			if field == "count" || field == "errors" {
+				num, ok := v.(float64)
+				if !ok || math.IsNaN(num) {
+					t.Fatalf("line %d field %q not a valid number: %v", i, field, v)
+				}
+			}
+		}
+	}
+}
+
+func TestCollector_ConcurrentRecordAndSnapshot(t *testing.T) {
+	t.Parallel()
+	c := NewCollector()
+
+	const writers = 10
+	const opsPerWriter = 500
+
+	var wg sync.WaitGroup
+	wg.Add(writers)
+	for g := 0; g < writers; g++ {
+		go func(id int) {
+			defer wg.Done()
+			op := fmt.Sprintf("op_%d", id%4)
+			for i := 0; i < opsPerWriter; i++ {
+				c.Record(op, time.Duration(i)*time.Microsecond, nil)
+			}
+		}(g)
+	}
+
+	snapshots := make([]MetricsSnapshot, 0, 20)
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	for {
+		select {
+		case <-done:
+			final := c.Snapshot()
+			var total int64
+			for _, s := range final.Ops {
+				total += s.Count
+			}
+			if total != writers*opsPerWriter {
+				t.Errorf("final total = %d, want %d", total, writers*opsPerWriter)
+			}
+			if len(snapshots) == 0 {
+				t.Error("main goroutine took zero snapshots during concurrent writes")
+			}
+			return
+		default:
+			snapshots = append(snapshots, c.Snapshot())
+			time.Sleep(50 * time.Microsecond)
+		}
 	}
 }
