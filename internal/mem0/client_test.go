@@ -106,6 +106,33 @@ func TestSearchSendsFiltersOnWire(t *testing.T) {
 	}
 }
 
+func TestUpdateSendsTextFieldNotMemory(t *testing.T) {
+	t.Parallel()
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			t.Fatalf("method = %q, want PUT", r.Method)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if _, ok := body["memory"]; ok {
+			t.Fatal("must use 'text' field, not 'memory' — OSS rejects 'memory' with 422")
+		}
+		if body["text"] != "updated content" {
+			t.Fatalf("text = %v, want 'updated content'", body["text"])
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"status": "ok"})
+	}))
+	defer upstream.Close()
+
+	client := NewClient(Options{BaseURL: upstream.URL, APIKey: "test-key", Timeout: time.Second})
+	_, err := client.Update(t.Context(), "mem-id-1", "updated content", nil)
+	if err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+}
+
 func TestAddUsesOSSHeadersAndPath(t *testing.T) {
 	t.Parallel()
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
