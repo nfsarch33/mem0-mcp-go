@@ -10,12 +10,15 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/nfsarch33/mem0-mcp-go/internal/metrics"
 )
 
 type Client struct {
 	baseURL    string
 	apiKey     string
 	httpClient *http.Client
+	Metrics    *metrics.Collector
 }
 
 type Options struct {
@@ -33,6 +36,7 @@ func NewClient(opts Options) *Client {
 		baseURL:    strings.TrimRight(opts.BaseURL, "/"),
 		apiKey:     opts.APIKey,
 		httpClient: &http.Client{Timeout: timeout},
+		Metrics:    metrics.NewCollector(),
 	}
 }
 
@@ -83,45 +87,66 @@ func (sr SearchRequest) wirePayload() map[string]any {
 }
 
 func (c *Client) Add(ctx context.Context, req MemoryRequest) (map[string]any, error) {
-	return c.doJSON(ctx, http.MethodPost, "/memories", nil, req)
+	return c.timed("add", func() (map[string]any, error) {
+		return c.doJSON(ctx, http.MethodPost, "/memories", nil, req)
+	})
 }
 
 func (c *Client) Search(ctx context.Context, req SearchRequest) (map[string]any, error) {
-	return c.doJSON(ctx, http.MethodPost, "/search", nil, req.wirePayload())
+	return c.timed("search", func() (map[string]any, error) {
+		return c.doJSON(ctx, http.MethodPost, "/search", nil, req.wirePayload())
+	})
 }
 
 func (c *Client) Get(ctx context.Context, id string) (map[string]any, error) {
-	return c.doJSON(ctx, http.MethodGet, "/memories/"+url.PathEscape(id), nil, nil)
+	return c.timed("get", func() (map[string]any, error) {
+		return c.doJSON(ctx, http.MethodGet, "/memories/"+url.PathEscape(id), nil, nil)
+	})
 }
 
 func (c *Client) GetAll(ctx context.Context, userID, appID string, limit int) (map[string]any, error) {
-	q := url.Values{}
-	if userID != "" {
-		q.Set("user_id", userID)
-	}
-	if appID != "" {
-		q.Set("app_id", appID)
-	}
-	if limit > 0 {
-		q.Set("limit", fmt.Sprintf("%d", limit))
-	}
-	return c.doJSON(ctx, http.MethodGet, "/memories", q, nil)
+	return c.timed("get_all", func() (map[string]any, error) {
+		q := url.Values{}
+		if userID != "" {
+			q.Set("user_id", userID)
+		}
+		if appID != "" {
+			q.Set("app_id", appID)
+		}
+		if limit > 0 {
+			q.Set("limit", fmt.Sprintf("%d", limit))
+		}
+		return c.doJSON(ctx, http.MethodGet, "/memories", q, nil)
+	})
 }
 
 func (c *Client) Update(ctx context.Context, id, memory string, metadata map[string]any) (map[string]any, error) {
-	payload := map[string]any{"text": memory}
-	if metadata != nil {
-		payload["metadata"] = metadata
-	}
-	return c.doJSON(ctx, http.MethodPut, "/memories/"+url.PathEscape(id), nil, payload)
+	return c.timed("update", func() (map[string]any, error) {
+		payload := map[string]any{"text": memory}
+		if metadata != nil {
+			payload["metadata"] = metadata
+		}
+		return c.doJSON(ctx, http.MethodPut, "/memories/"+url.PathEscape(id), nil, payload)
+	})
 }
 
 func (c *Client) Delete(ctx context.Context, id string) (map[string]any, error) {
-	return c.doJSON(ctx, http.MethodDelete, "/memories/"+url.PathEscape(id), nil, nil)
+	return c.timed("delete", func() (map[string]any, error) {
+		return c.doJSON(ctx, http.MethodDelete, "/memories/"+url.PathEscape(id), nil, nil)
+	})
 }
 
 func (c *Client) History(ctx context.Context, id string) (map[string]any, error) {
-	return c.doJSON(ctx, http.MethodGet, "/memories/"+url.PathEscape(id)+"/history", nil, nil)
+	return c.timed("history", func() (map[string]any, error) {
+		return c.doJSON(ctx, http.MethodGet, "/memories/"+url.PathEscape(id)+"/history", nil, nil)
+	})
+}
+
+func (c *Client) timed(op string, fn func() (map[string]any, error)) (map[string]any, error) {
+	start := time.Now()
+	result, err := fn()
+	c.Metrics.Record(op, time.Since(start), err)
+	return result, err
 }
 
 func (c *Client) Doctor(ctx context.Context) error {
