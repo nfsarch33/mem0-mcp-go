@@ -109,7 +109,7 @@ func (c *Client) GetAll(ctx context.Context, userID, appID string, limit int) (m
 }
 
 func (c *Client) Update(ctx context.Context, id, memory string, metadata map[string]any) (map[string]any, error) {
-	payload := map[string]any{"memory": memory}
+	payload := map[string]any{"text": memory}
 	if metadata != nil {
 		payload["metadata"] = metadata
 	}
