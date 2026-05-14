@@ -51,11 +51,35 @@ type Message struct {
 }
 
 type SearchRequest struct {
-	Query   string         `json:"query"`
-	UserID  string         `json:"user_id,omitempty"`
-	AppID   string         `json:"app_id,omitempty"`
-	Limit   int            `json:"limit,omitempty"`
-	Filters map[string]any `json:"filters,omitempty"`
+	Query   string         `json:"-"`
+	UserID  string         `json:"-"`
+	AppID   string         `json:"-"`
+	Limit   int            `json:"-"`
+	Filters map[string]any `json:"-"`
+}
+
+// wirePayload builds the JSON body for /search. Mem0 OSS rejects
+// top-level user_id/app_id; they must be inside the filters dict.
+func (sr SearchRequest) wirePayload() map[string]any {
+	payload := map[string]any{"query": sr.Query}
+	if sr.Limit > 0 {
+		payload["limit"] = sr.Limit
+	}
+
+	filters := make(map[string]any)
+	for k, v := range sr.Filters {
+		filters[k] = v
+	}
+	if sr.UserID != "" {
+		filters["user_id"] = sr.UserID
+	}
+	if sr.AppID != "" {
+		filters["app_id"] = sr.AppID
+	}
+	if len(filters) > 0 {
+		payload["filters"] = filters
+	}
+	return payload
 }
 
 func (c *Client) Add(ctx context.Context, req MemoryRequest) (map[string]any, error) {
@@ -63,7 +87,7 @@ func (c *Client) Add(ctx context.Context, req MemoryRequest) (map[string]any, er
 }
 
 func (c *Client) Search(ctx context.Context, req SearchRequest) (map[string]any, error) {
-	return c.doJSON(ctx, http.MethodPost, "/search", nil, req)
+	return c.doJSON(ctx, http.MethodPost, "/search", nil, req.wirePayload())
 }
 
 func (c *Client) Get(ctx context.Context, id string) (map[string]any, error) {
