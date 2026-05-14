@@ -157,6 +157,113 @@ func TestHealthHandler_503WhenDegraded(t *testing.T) {
 	}
 }
 
+func TestChecker_PostgresDown(t *testing.T) {
+	t.Parallel()
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"status":"error","detail":"pq: connection refused"}`))
+	}))
+	defer upstream.Close()
+
+	hc := NewChecker(CheckerConfig{
+		UpstreamURL: upstream.URL + "/healthz",
+		Timeout:     time.Second,
+	})
+	result := hc.Check()
+	if result.Status != StatusDegraded {
+		t.Fatalf("Status = %q, want %q for postgres-down", result.Status, StatusDegraded)
+	}
+	if result.Upstream != StatusDown {
+		t.Fatalf("Upstream = %q, want %q", result.Upstream, StatusDown)
+	}
+}
+
+func TestChecker_Neo4jDown(t *testing.T) {
+	t.Parallel()
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"status":"error","detail":"neo4j: ServiceUnavailable"}`))
+	}))
+	defer upstream.Close()
+
+	hc := NewChecker(CheckerConfig{
+		UpstreamURL: upstream.URL + "/healthz",
+		Timeout:     time.Second,
+	})
+	result := hc.Check()
+	if result.Status != StatusDegraded {
+		t.Fatalf("Status = %q, want %q for neo4j-down", result.Status, StatusDegraded)
+	}
+	if result.Upstream != StatusDown {
+		t.Fatalf("Upstream = %q, want %q", result.Upstream, StatusDown)
+	}
+}
+
+func TestChecker_TunnelDown(t *testing.T) {
+	t.Parallel()
+	// Use an unreachable address to simulate connection refused (tunnel down).
+	hc := NewChecker(CheckerConfig{
+		UpstreamURL: "http://127.0.0.1:1/healthz",
+		Timeout:     100 * time.Millisecond,
+	})
+	result := hc.Check()
+	if result.Status != StatusDegraded {
+		t.Fatalf("Status = %q, want %q for tunnel-down", result.Status, StatusDegraded)
+	}
+	if result.Upstream != StatusDown {
+		t.Fatalf("Upstream = %q, want %q", result.Upstream, StatusDown)
+	}
+}
+
+func TestChecker_PartialDegradation(t *testing.T) {
+	t.Parallel()
+	// Upstream returns 200 but the checker also sees pending outbox items,
+	// simulating a partial degradation scenario.
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"degraded","components":{"postgres":"ok","neo4j":"degraded"}}`))
+	}))
+	defer upstream.Close()
+
+	pending := &stubPendingCounter{count: 3}
+	hc := NewChecker(CheckerConfig{
+		UpstreamURL:    upstream.URL + "/healthz",
+		Timeout:        time.Second,
+		PendingCounter: pending,
+	})
+	result := hc.Check()
+	if result.Status != StatusDegraded {
+		t.Fatalf("Status = %q, want %q for partial degradation", result.Status, StatusDegraded)
+	}
+	if result.Upstream != StatusOK {
+		t.Fatalf("Upstream = %q, want %q (HTTP 200 from upstream)", result.Upstream, StatusOK)
+	}
+	if result.OutboxPending != 3 {
+		t.Fatalf("OutboxPending = %d, want 3", result.OutboxPending)
+	}
+}
+
+func TestChecker_TimeoutHandling(t *testing.T) {
+	t.Parallel()
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(500 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+
+	hc := NewChecker(CheckerConfig{
+		UpstreamURL: upstream.URL + "/healthz",
+		Timeout:     50 * time.Millisecond,
+	})
+	result := hc.Check()
+	if result.Status != StatusDegraded {
+		t.Fatalf("Status = %q, want %q for timeout", result.Status, StatusDegraded)
+	}
+	if result.Upstream != StatusDown {
+		t.Fatalf("Upstream = %q, want %q (should be down on timeout)", result.Upstream, StatusDown)
+	}
+}
+
 type stubPendingCounter struct {
 	count int
 }

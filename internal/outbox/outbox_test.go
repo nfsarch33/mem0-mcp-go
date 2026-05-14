@@ -214,6 +214,67 @@ func TestOutbox_CircuitState(t *testing.T) {
 	}
 }
 
+func TestOutbox_DrainRecovery(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	fp := filepath.Join(dir, "drain_recovery.ndjson")
+	upstream := &mockWriter{failNext: true}
+
+	ob := New(Config{
+		FilePath:         fp,
+		Upstream:         upstream,
+		FailureThreshold: 1,
+		ResetTimeout:     15 * time.Millisecond,
+		DrainInterval:    5 * time.Millisecond,
+	})
+	defer ob.Close()
+
+	// Trip the circuit with 3 failures to ensure it's solidly open.
+	for i := 0; i < 3; i++ {
+		_ = ob.Submit(context.Background(), Entry{
+			Operation: "add",
+			Payload:   map[string]any{"trip": i},
+		})
+	}
+
+	if ob.CircuitState() != StateOpen {
+		t.Fatalf("CircuitState() = %v, want Open after failures", ob.CircuitState())
+	}
+
+	// Write 5 entries directly to the outbox file while circuit is open.
+	for i := 0; i < 5; i++ {
+		_ = ob.Submit(context.Background(), Entry{
+			Operation: "add",
+			Payload:   map[string]any{"queued": i},
+		})
+	}
+
+	pending := ob.PendingCount()
+	if pending < 5 {
+		t.Fatalf("PendingCount() = %d, want at least 5", pending)
+	}
+
+	// Restore upstream health.
+	upstream.setFail(false)
+
+	// Wait for drain goroutine to flush all entries.
+	deadline := time.After(2 * time.Second)
+	for {
+		if ob.PendingCount() == 0 {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("drain did not flush entries within timeout; pending=%d", ob.PendingCount())
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+
+	if got := upstream.callCount(); got < 5 {
+		t.Fatalf("upstream received %d calls, want at least 5", got)
+	}
+}
+
 func assertFileLineCount(t *testing.T, path string, want int) {
 	t.Helper()
 	raw, err := os.ReadFile(path)
