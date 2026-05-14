@@ -3,14 +3,18 @@ package mem0
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
+	"github.com/nfsarch33/mem0-mcp-go/internal/cache"
 	"github.com/nfsarch33/mem0-mcp-go/internal/metrics"
 )
 
@@ -19,12 +23,15 @@ type Client struct {
 	apiKey     string
 	httpClient *http.Client
 	Metrics    *metrics.Collector
+	cache      *cache.Cache
 }
 
 type Options struct {
-	BaseURL string
-	APIKey  string
-	Timeout time.Duration
+	BaseURL        string
+	APIKey         string
+	Timeout        time.Duration
+	CacheMaxItems  int
+	CacheTTL       time.Duration
 }
 
 func NewClient(opts Options) *Client {
@@ -37,6 +44,10 @@ func NewClient(opts Options) *Client {
 		apiKey:     opts.APIKey,
 		httpClient: &http.Client{Timeout: timeout},
 		Metrics:    metrics.NewCollector(),
+		cache: cache.New(cache.Options{
+			MaxEntries: opts.CacheMaxItems,
+			TTL:        opts.CacheTTL,
+		}),
 	}
 }
 
@@ -93,9 +104,55 @@ func (c *Client) Add(ctx context.Context, req MemoryRequest) (map[string]any, er
 }
 
 func (c *Client) Search(ctx context.Context, req SearchRequest) (map[string]any, error) {
-	return c.timed("search", func() (map[string]any, error) {
+	cacheKey := searchCacheKey(req)
+
+	if raw, ok := c.cache.Get(cacheKey); ok {
+		var out map[string]any
+		if err := json.Unmarshal(raw, &out); err == nil {
+			return out, nil
+		}
+	}
+
+	result, err := c.timed("search", func() (map[string]any, error) {
 		return c.doJSON(ctx, http.MethodPost, "/search", nil, req.wirePayload())
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	if raw, marshalErr := json.Marshal(result); marshalErr == nil {
+		c.cache.Set(cacheKey, raw)
+	}
+	return result, nil
+}
+
+// SearchCache exposes cache stats for observability.
+func (c *Client) SearchCache() cache.CacheStats {
+	return c.cache.Stats()
+}
+
+func searchCacheKey(req SearchRequest) string {
+	h := sha256.New()
+	h.Write([]byte(req.Query))
+	h.Write([]byte{0})
+	h.Write([]byte(req.UserID))
+	h.Write([]byte{0})
+	h.Write([]byte(req.AppID))
+	h.Write([]byte{0})
+	if len(req.Filters) > 0 {
+		keys := make([]string, 0, len(req.Filters))
+		for k := range req.Filters {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			h.Write([]byte(k))
+			h.Write([]byte{0})
+			h.Write([]byte(fmt.Sprintf("%v", req.Filters[k])))
+			h.Write([]byte{0})
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 func (c *Client) Get(ctx context.Context, id string) (map[string]any, error) {
