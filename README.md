@@ -6,6 +6,11 @@ Provides a fast, single-binary MCP interface for any self-hosted Mem0 instance.
 Designed as the primary Mem0 surface for Cursor, Claude Code, and other
 MCP-compatible agents once you migrate from managed Mem0 cloud to self-hosted.
 
+For the active EC stack, `mem0-oss` is the only operational MCP server. Keep
+the runtime pointed at the OSS endpoint, prefer `mem0_search` for scoped reads,
+and treat dual-write as legacy migration-only functionality rather than a normal
+operating mode.
+
 ## Cursor MCP setup
 
 Add this to `~/.cursor/mcp.json` under `mcpServers`:
@@ -17,14 +22,18 @@ Add this to `~/.cursor/mcp.json` under `mcpServers`:
   "env": {
     "MEM0_BASE_URL": "http://<your-mem0-host>:<port>",
     "MEM0_API_KEY": "<your-api-key>",
-    "MEM0_USER_ID": "<your-user>",
-    "MEM0_APP_ID": "<your-app>"
+    "MEM0_DEFAULT_USER_ID": "<your-user>",
+    "MEM0_DEFAULT_APP_ID": "<your-app>"
   }
 }
 ```
 
 The recommended MCP server name is **`mem0-oss`** to clearly distinguish it
 from any cloud-backed Mem0 MCP server.
+
+`MEM0_USER_ID` / `MEM0_APP_ID` remain supported for standalone or older setups,
+but the stack-standard MCP configs in Cursor, Codex, and Claude use
+`MEM0_DEFAULT_USER_ID` / `MEM0_DEFAULT_APP_ID`.
 
 ## Tools
 
@@ -41,6 +50,11 @@ from any cloud-backed Mem0 MCP server.
 Cursor-compatible aliases are also registered: `memory_search`, `memory_write`,
 `memory_read`.
 
+`mem0_search` is the recommended default read path for app-scoped usage. Mem0
+OSS still has a known `mem0_get_all` / `app_id` filtering defect, so
+`mem0_get_all` should be treated as an operator/debug tool instead of the
+primary scoped read path.
+
 ## Configuration
 
 | Env var | Default | Purpose |
@@ -48,13 +62,16 @@ Cursor-compatible aliases are also registered: `memory_search`, `memory_write`,
 | `MEM0_BASE_URL` | empty (required) | Self-hosted Mem0 base URL |
 | `MEM0_API_KEY` | empty | Mem0 OSS API key, sent as `X-API-Key` |
 | `MEM0_USER_ID` | `default-user` | Default user namespace |
+| `MEM0_DEFAULT_USER_ID` | empty | Compatibility fallback for legacy MCP configs |
 | `MEM0_APP_ID` | `default-app` | Default app namespace |
+| `MEM0_DEFAULT_APP_ID` | empty | Compatibility fallback for legacy MCP configs |
 | `MCP_TRANSPORT` | `stdio` | `stdio` or `sse` |
 | `MCP_SSE_ADDR` | `:9092` | SSE bind address |
 | `MEM0_TIMEOUT` | `30s` | HTTP timeout (seconds or Go duration) |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, or `error` |
 
-`MEM0_DEFAULT_USER_ID` is accepted as a compatibility fallback.
+`MEM0_DEFAULT_USER_ID` and `MEM0_DEFAULT_APP_ID` are accepted as compatibility
+fallbacks for older MCP client configs.
 
 ### Operator deploy step
 
@@ -71,6 +88,10 @@ target host environment.
 Fan out writes to a managed cloud API and/or a backup target while keeping
 the self-hosted OSS instance as the primary read source. Useful during the
 canary period when migrating from cloud to self-hosted.
+
+This remains available for one-way migrations, but the active EC stack runs
+OSS-only. Do not enable dual-write for normal day-to-day operation unless you
+are explicitly performing a migration or backup exercise.
 
 | Env var | Default | Purpose |
 |---------|---------|---------|

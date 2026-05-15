@@ -118,6 +118,7 @@ Env:
   MEM0_USER_ID           Default Mem0 user id (default default-user)
   MEM0_DEFAULT_USER_ID   Compatibility fallback for old MCP configs
   MEM0_APP_ID            Default app id (default default-app)
+  MEM0_DEFAULT_APP_ID    Compatibility fallback for old MCP configs
   MCP_TRANSPORT          stdio | sse (default stdio)
   MCP_SSE_ADDR           Bind addr for sse (default :9092)
   LOG_LEVEL              debug | info | warn | error

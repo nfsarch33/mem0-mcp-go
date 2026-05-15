@@ -215,6 +215,67 @@ func (c *Client) Doctor(ctx context.Context) error {
 	return err
 }
 
+// ListEntities returns user/agent/run entities known to Mem0 OSS.
+// Mem0 OSS exposes /entities; older managed Mem0 had no equivalent. Used by
+// the CLI surface to enumerate scopes for handoff/preference routing.
+func (c *Client) ListEntities(ctx context.Context) (map[string]any, error) {
+	return c.timed("list_entities", func() (map[string]any, error) {
+		raw, err := c.doRaw(ctx, http.MethodGet, "/entities", nil, nil)
+		if err != nil {
+			return nil, err
+		}
+		var arr []any
+		if jerr := json.Unmarshal(raw, &arr); jerr == nil {
+			return map[string]any{"entities": arr}, nil
+		}
+		var obj map[string]any
+		if jerr := json.Unmarshal(raw, &obj); jerr == nil {
+			return obj, nil
+		}
+		return map[string]any{"raw": string(raw)}, nil
+	})
+}
+
+// doRaw is the byte-level sibling of doJSON for endpoints that return JSON
+// arrays rather than objects.
+func (c *Client) doRaw(ctx context.Context, method, path string, query url.Values, payload any) ([]byte, error) {
+	endpoint := c.baseURL + path
+	if len(query) > 0 {
+		endpoint += "?" + query.Encode()
+	}
+	var body io.Reader
+	if payload != nil {
+		b, err := json.Marshal(payload)
+		if err != nil {
+			return nil, fmt.Errorf("marshal request: %w", err)
+		}
+		body = bytes.NewReader(b)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, body)
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	if c.apiKey != "" {
+		req.Header.Set("X-API-Key", c.apiKey)
+	}
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("mem0 request: %w", err)
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("mem0 status %d: %s", resp.StatusCode, string(raw))
+	}
+	return raw, nil
+}
+
 func (c *Client) doJSON(ctx context.Context, method, path string, query url.Values, payload any) (map[string]any, error) {
 	endpoint := c.baseURL + path
 	if len(query) > 0 {
