@@ -1,3 +1,4 @@
+// runx-public-repo-gate: allow-file network_topology — test fixtures use the canonical Mem0 OSS loopback endpoint (127.0.0.1:18888); not a personal-stack tunnel.
 package cliconfig
 
 import (
