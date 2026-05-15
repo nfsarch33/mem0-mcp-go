@@ -29,13 +29,15 @@ type Config struct {
 // generic defaults. Operators MUST set MEM0_BASE_URL in their deploy
 // environment; the package no longer pre-wires loopback or personal
 // tunnel topology. UserID and AppID default to neutral placeholders so
-// the package is publishable as a true OSS Mem0 MCP server.
+// the package is publishable as a true OSS Mem0 MCP server. Older MCP
+// client configs that still use MEM0_DEFAULT_USER_ID /
+// MEM0_DEFAULT_APP_ID remain supported as compatibility fallbacks.
 func Load() Config {
 	return Config{
 		BaseURL:   getenv("MEM0_BASE_URL", ""),
 		APIKey:    os.Getenv("MEM0_API_KEY"),
 		UserID:    getenv("MEM0_USER_ID", getenv("MEM0_DEFAULT_USER_ID", "default-user")),
-		AppID:     getenv("MEM0_APP_ID", "default-app"),
+		AppID:     getenv("MEM0_APP_ID", getenv("MEM0_DEFAULT_APP_ID", "default-app")),
 		Transport: getenv("MCP_TRANSPORT", "stdio"),
 		SSEAddr:   getenv("MCP_SSE_ADDR", ":9092"),
 		Timeout:   getenvDuration("MEM0_TIMEOUT", 30*time.Second),

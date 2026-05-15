@@ -21,6 +21,7 @@ func TestLoad_DefaultsAreGeneric(t *testing.T) {
 		"MEM0_USER_ID",
 		"MEM0_DEFAULT_USER_ID",
 		"MEM0_APP_ID",
+		"MEM0_DEFAULT_APP_ID",
 		"MCP_TRANSPORT",
 		"MCP_SSE_ADDR",
 		"MEM0_TIMEOUT",
@@ -81,6 +82,22 @@ func TestLoad_DualWriteDefaults(t *testing.T) {
 	}
 	if cfg.ReadSource != "oss" {
 		t.Fatalf("ReadSource = %q, want oss", cfg.ReadSource)
+	}
+}
+
+func TestLoad_CompatibilityFallbacks(t *testing.T) {
+	t.Setenv("MEM0_USER_ID", "")
+	t.Setenv("MEM0_DEFAULT_USER_ID", "compat-user")
+	t.Setenv("MEM0_APP_ID", "")
+	t.Setenv("MEM0_DEFAULT_APP_ID", "compat-app")
+
+	cfg := Load()
+
+	if cfg.UserID != "compat-user" {
+		t.Fatalf("UserID = %q, want compat-user", cfg.UserID)
+	}
+	if cfg.AppID != "compat-app" {
+		t.Fatalf("AppID = %q, want compat-app", cfg.AppID)
 	}
 }
 
