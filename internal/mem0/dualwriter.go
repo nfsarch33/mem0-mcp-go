@@ -125,6 +125,10 @@ func (dw *DualWriter) Doctor(ctx context.Context) error {
 	return dw.primary.Doctor(ctx)
 }
 
+func (dw *DualWriter) ListEntities(ctx context.Context) (map[string]any, error) {
+	return dw.readClient().ListEntities(ctx)
+}
+
 // fanOutAsync fires shadow and backup writes in background goroutines.
 // Errors are logged but never propagated to the caller.
 func (dw *DualWriter) fanOutAsync(op string, fn func(c *Client, ctx context.Context) error) {

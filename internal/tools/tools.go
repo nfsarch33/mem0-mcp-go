@@ -18,6 +18,7 @@ type Mem0Client interface {
 	Delete(ctx context.Context, id string) (map[string]any, error)
 	History(ctx context.Context, id string) (map[string]any, error)
 	Doctor(ctx context.Context) error
+	ListEntities(ctx context.Context) (map[string]any, error)
 }
 
 type Defaults struct {
