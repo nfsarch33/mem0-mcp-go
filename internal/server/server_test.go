@@ -38,6 +38,9 @@ func (fakeClient) History(context.Context, string) (map[string]any, error) {
 	return map[string]any{"history": []any{}}, nil
 }
 func (fakeClient) Doctor(context.Context) error { return nil }
+func (fakeClient) ListEntities(context.Context) (map[string]any, error) {
+	return map[string]any{"entities": []any{}}, nil
+}
 
 func TestServerRegistersTenTools(t *testing.T) {
 	t.Parallel()
