@@ -1,5 +1,6 @@
 /bin/
 /dist/
+/mem0-mcp-go
 .env
 *.log
 .DS_Store
