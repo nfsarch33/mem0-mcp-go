@@ -10,6 +10,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/nfsarch33/mem0-mcp-go/internal/clicmd"
 	"github.com/nfsarch33/mem0-mcp-go/internal/config"
 	"github.com/nfsarch33/mem0-mcp-go/internal/mem0"
 	"github.com/nfsarch33/mem0-mcp-go/internal/server"
@@ -19,6 +20,11 @@ import (
 const version = "0.1.0"
 
 func main() {
+	// Dispatch "cli" subcommand before the MCP-server flag parser so that
+	// the CLI surface never requires MCP env vars.
+	if len(os.Args) >= 2 && os.Args[1] == "cli" {
+		os.Exit(clicmd.Run(context.Background(), os.Args[2:], os.Stdout, os.Stderr))
+	}
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintf(os.Stderr, "mem0-mcp-go: %v\n", err)
 		os.Exit(1)
