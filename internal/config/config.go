@@ -40,7 +40,7 @@ func Load() Config {
 		AppID:     getenv("MEM0_APP_ID", getenv("MEM0_DEFAULT_APP_ID", "default-app")),
 		Transport: getenv("MCP_TRANSPORT", "stdio"),
 		SSEAddr:   getenv("MCP_SSE_ADDR", ":9092"),
-		Timeout:   getenvDuration("MEM0_TIMEOUT", 30*time.Second),
+		Timeout:   getenvDuration("MEM0_TIMEOUT", 120*time.Second),
 		LogLevel:  getenv("LOG_LEVEL", "info"),
 
 		DualWrite:    getenvBool("MEM0_DUAL_WRITE", false),

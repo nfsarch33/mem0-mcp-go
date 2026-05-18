@@ -18,6 +18,8 @@ import (
 	"github.com/nfsarch33/mem0-mcp-go/internal/metrics"
 )
 
+const inferRetryBackoff = 60 * time.Second
+
 type Client struct {
 	baseURL    string
 	apiKey     string
@@ -37,7 +39,7 @@ type Options struct {
 func NewClient(opts Options) *Client {
 	timeout := opts.Timeout
 	if timeout == 0 {
-		timeout = 30 * time.Second
+		timeout = 120 * time.Second
 	}
 	return &Client{
 		baseURL:    strings.TrimRight(opts.BaseURL, "/"),
@@ -99,7 +101,19 @@ func (sr SearchRequest) wirePayload() map[string]any {
 
 func (c *Client) Add(ctx context.Context, req MemoryRequest) (map[string]any, error) {
 	return c.timed("add", func() (map[string]any, error) {
-		return c.doJSON(ctx, http.MethodPost, "/memories", nil, req)
+		result, err := c.doJSON(ctx, http.MethodPost, "/memories", nil, req)
+		if err != nil && req.Infer != nil && *req.Infer {
+			select {
+			case <-ctx.Done():
+				return nil, fmt.Errorf("add with infer: %w", ctx.Err())
+			case <-time.After(inferRetryBackoff):
+			}
+			result, err = c.doJSON(ctx, http.MethodPost, "/memories", nil, req)
+			if err != nil {
+				return nil, fmt.Errorf("add with infer (retry): %w", err)
+			}
+		}
+		return result, err
 	})
 }
 
